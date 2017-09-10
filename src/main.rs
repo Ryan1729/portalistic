@@ -1933,8 +1933,14 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                     }
                 };
 
+                let pixel_ptr = match pixels {
+                    image::DecodingResult::U8(ref v) => v.as_ptr() as _,
+                    image::DecodingResult::U16(ref v) => v.as_ptr() as _,
+                };
+
                 unsafe {
                     ctx.GenTextures(1, &mut texture as _);
+
                     ctx.BindTexture(gl::TEXTURE_2D, texture);
 
                     ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
@@ -1951,10 +1957,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         0,
                         external_format,
                         data_type,
-                        (match pixels {
-                            image::DecodingResult::U8(v) => v.as_ptr() as _,
-                            image::DecodingResult::U16(v) => v.as_ptr() as _,
-                        }),
+                        pixel_ptr,
                     );
                 }
             }
