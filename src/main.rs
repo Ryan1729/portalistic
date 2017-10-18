@@ -2,6 +2,7 @@ extern crate open_gl_bindings;
 extern crate sdl2;
 
 extern crate common;
+extern crate image_decoding;
 
 #[cfg(debug_assertions)]
 extern crate libloading;
@@ -15,12 +16,9 @@ use open_gl_bindings::gl;
 
 use sdl2::event::Event;
 
-use std::f32;
 use std::fs::File;
 
-extern crate image;
 
-use image::ImageDecoder;
 
 use std::ffi::CString;
 use std::str;
@@ -32,10 +30,8 @@ use rusttype::{point, vector, Font, FontCollection, PositionedGlyph, Scale};
 
 use common::*;
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(debug_assertions)]
 const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
-#[cfg(all(debug_assertions, windows))]
-const LIB_PATH: &'static str = "./target/debug/state_manipulation.dll";
 #[cfg(not(debug_assertions))]
 const LIB_PATH: &'static str = "Hopefully compiled out";
 
@@ -158,8 +154,7 @@ fn find_sdl_gl_driver() -> Option<u32> {
     None
 }
 
-const RANGES_LEN: usize = 16;
-type Ranges = [(u16, u16); RANGES_LEN];
+type Ranges = [(u16, u16); 16];
 
 static mut RESOURCES: Option<Resources> = None;
 
@@ -343,8 +338,8 @@ impl Resources {
         }
 
         let textures = [
-            make_texture_from_png(&ctx, "images/cardBack_blue.png"),
-            make_texture_from_png(&ctx, "images/cardBack_green.png"),
+            make_texture_from_png(&ctx, "images/texture0.png"),
+            make_texture_from_png(&ctx, "images/texture1.png"),
         ];
 
         debug_assert!(frame_buffers[1] != 0);
@@ -392,31 +387,8 @@ impl Resources {
         Some(result)
     }
 
-    ///This is called by the Platform `set_verts` function.
-    ///`draw_layer` relies on a set of square verticies being on the GPU to work correctly,
-    //so the following verts are added onto the end of the vert buffer:
-    /// vec![
-    ///     -1.0, 1.0,
-    ///     -1.0, -1.0,
-    ///     1.0, -1.0,
-    ///     1.0, 1.0,
-    ///     ]
     fn set_verts(&mut self, vert_vecs: Vec<Vec<f32>>) {
-        let (mut verts, mut vert_ranges, mut vert_ranges_len) = get_verts_and_ranges(vert_vecs);
-
-        //We subtract 1 to make room for the extra square on the end.
-        assert!(
-            vert_ranges_len <= RANGES_LEN - 1,
-            "Too many polygons defined!"
-        );
-
-        let (_, old_end) = vert_ranges[vert_ranges_len - 1];
-
-        verts.append(&mut vec![-1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0]);
-
-        vert_ranges_len += 1;
-
-        vert_ranges[vert_ranges_len - 1] = (old_end + 1, old_end + 8);
+        let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
 
         unsafe {
             self.ctx.BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer);
@@ -604,6 +576,7 @@ impl TextRenderCommand {
             frame_buffer_index,
         }
     }
+
     fn get_text(&self) -> String {
         let mut result = String::new();
 
@@ -920,6 +893,7 @@ impl TextResources {
     }
 }
 
+
 fn main() {
     let mut app = Application::new();
 
@@ -936,7 +910,7 @@ fn main() {
     gl_attr.set_context_major_version(2);
     gl_attr.set_context_minor_version(1);
 
-    let canvas: sdl2::render::Canvas<sdl2::video::Window> = video_subsystem
+    let canvas = video_subsystem
         .window("Window", INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT)
         .opengl()
         .build()
@@ -946,6 +920,7 @@ fn main() {
         .build()
         .unwrap();
 
+
     let (cache_width, cache_height) = (512, 512);
 
     let mut text_cache = rusttype::gpu_cache::Cache::new(cache_width, cache_height, 0.1, 0.1);
@@ -953,13 +928,13 @@ fn main() {
     unsafe {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
-
+        println!("{:?}", canvas.window().drawable_size());
         RESOURCES = Resources::new(
             &app,
             ctx,
             canvas.window().drawable_size(),
             (cache_width, cache_height),
-        )
+        );
     }
 
     let mut state = app.new_state();
@@ -1257,8 +1232,7 @@ fn draw_layer(frame_buffer_index: usize, alpha: f32) {
         let vertex_buffer = resources.vertex_buffer;
         let ctx = &resources.ctx;
 
-        //There should always be the verts for a square at the end of the verts
-        let (start, end) = resources.vert_ranges[resources.vert_ranges_len - 1];
+        let (start, end) = resources.vert_ranges[1];
         let vert_count = ((end + 1 - start) / 2) as _;
 
         if frame_buffer != 0 {
@@ -1339,6 +1313,7 @@ fn set_verts(vert_vecs: Vec<Vec<f32>>) {
     }
 }
 
+
 unsafe fn begin_using_frame_buffer(ctx: &gl::Gl, frame_buffer: gl::types::GLuint) {
     ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
 }
@@ -1362,9 +1337,7 @@ unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {
         } else {
             ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
         }
-        ctx.Clear(
-            gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-        );
+        ctx.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
     }
 }
 
@@ -1617,13 +1590,13 @@ fn render_text(
             .flat_map(|g| {
                 if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
                     let gl_rect = rusttype::Rect {
-                        min: origin +
-                            (vector(
+                        min: origin
+                            + (vector(
                                 screen_rect.min.x as f32 / screen_width as f32 - 0.5,
                                 1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
                             )) * 2.0,
-                        max: origin +
-                            (vector(
+                        max: origin
+                            + (vector(
                                 screen_rect.max.x as f32 / screen_width as f32 - 0.5,
                                 1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
                             )) * 2.0,
@@ -1717,7 +1690,10 @@ fn render_text(
             ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
             ctx.Uniform1i(shader.texture_uniform, 2);
 
+            ctx.Clear(gl::STENCIL_BUFFER_BIT);
+
             ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
+            ctx.Disable(gl::STENCIL_TEST);
 
             ctx.BindTexture(gl::TEXTURE_2D, 0);
             ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
@@ -1725,30 +1701,26 @@ fn render_text(
     }
 }
 
-
-
 struct ColourShader {
     program: gl::types::GLuint,
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
     colour_uniform: gl::types::GLsizei,
 }
-
-
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
-attribute vec2 position;\n\
-uniform mat4 matrix;\n\
-void main() {\n\
+    attribute vec2 position;\n\
+    uniform mat4 matrix;\n\
+    void main() {\n\
     gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-}";
+    }";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
-uniform vec4 colour;\n\
-void main() {\n\
-   gl_FragColor = colour;\n\
-}";
+    uniform vec4 colour;\n\
+    void main() {\n\
+       gl_FragColor = colour;\n\
+    }";
 
 struct TextureShader {
     program: gl::types::GLuint,
@@ -1765,32 +1737,32 @@ struct TextureShader {
 //Then again, maybe this is faster because of better memory badwidth.
 //We'll profile if it becomes a problem.
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
-attribute vec2 position;\n\
-uniform mat4 matrix;\n\
-uniform vec4 texture_xywh;\n\
-varying vec2 texcoord;\n\
-void main() {\n\
-    vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
-    texcoord = corner * texture_xywh.zw + texture_xywh.xy;
-    gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-}";
+    attribute vec2 position;\n\
+    uniform mat4 matrix;\n\
+    uniform vec4 texture_xywh;\n\
+    varying vec2 texcoord;\n\
+    void main() {\n\
+        vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
+        texcoord = corner * texture_xywh.zw + texture_xywh.xy;
+        gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
+    }";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-uniform sampler2D textures[2];\n\
-uniform int texture_index;\n\
-uniform vec4 tint;\n\
-varying vec2 texcoord;\n\
-void main() {\n\
-    vec4 tex;
-    if (texture_index == 1) {
-        tex = texture2D(textures[1], texcoord);\n\
-    } else {
-        tex = texture2D(textures[0], texcoord);\n\
-    }
+    uniform sampler2D textures[2];\n\
+    uniform int texture_index;\n\
+    uniform vec4 tint;\n\
+    varying vec2 texcoord;\n\
+    void main() {\n\
+        vec4 tex;
+        if (texture_index == 1) {
+            tex = texture2D(textures[1], texcoord);\n\
+        } else {
+            tex = texture2D(textures[0], texcoord);\n\
+        }
 
-    gl_FragColor = tex + tint * tex.a;
-}";
+        gl_FragColor = tex + tint * tex.a;
+    }";
 
 struct TextShader {
     program: gl::types::GLuint,
@@ -1802,25 +1774,26 @@ struct TextShader {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_VS_SRC: &'static str = "#version 120\n\
-attribute vec2 position;\n\
-attribute vec2 texcoord;\n\
-attribute vec4 colour;\n\
-varying vec2 v_texcoord;\n\
-varying vec4 v_colour;\n\
-void main() {\n\
-    gl_Position = vec4(position, 0.0, 1.0);\n\
-    v_texcoord = texcoord;\n\
-    v_colour = colour;\n\
-}";
+        attribute vec2 position;\n\
+        attribute vec2 texcoord;\n\
+        attribute vec4 colour;\n\
+        varying vec2 v_texcoord;\n\
+        varying vec4 v_colour;\n\
+        void main() {\n\
+            gl_Position = vec4(position, 0.0, 1.0);\n\
+            v_texcoord = texcoord;\n\
+            v_colour = colour;\n\
+        }";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_FS_SRC: &'static str = "#version 120\n\
-uniform sampler2D tex;\n\
-varying vec2 v_texcoord;\n\
-varying vec4 v_colour;\n\
-void main() {\n\
-    gl_FragColor = v_colour * vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);\n\
-}";
+        uniform sampler2D tex;\n\
+        varying vec2 v_texcoord;\n\
+        varying vec4 v_colour;\n\
+        void main() {\n\
+            gl_FragColor = v_colour * vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);\n\
+        }";
+
 
 //shader helper functions based on https://gist.github.com/simias/c140d1479ada4d6218c0
 fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl::types::GLuint {
@@ -1899,7 +1872,6 @@ fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Ranges, usiz
 
     for mut vec in vert_vecs.iter_mut() {
         let end = start + vec.len() - 1;
-        println!("{:?}", (start, end));
         ranges[used_len] = (start as u16, end as u16);
 
         start = end + 1;
@@ -1915,18 +1887,13 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
     let mut texture = 0;
 
     if let Ok(image) = File::open(filename) {
-        let mut decoder = image::png::PNGDecoder::new(image);
-        match (
-            decoder.dimensions(),
-            decoder.colortype(),
-            decoder.read_image(),
-        ) {
+        match image_decoding::decode_png(image) {
             (Ok((width, height)), Ok(colortype), Ok(pixels)) => {
                 let (external_format, data_type) = match colortype {
-                    image::ColorType::RGB(8) => (gl::RGB, gl::UNSIGNED_BYTE),
-                    image::ColorType::RGB(16) => (gl::RGB, gl::UNSIGNED_SHORT),
-                    image::ColorType::RGBA(8) => (gl::RGBA, gl::UNSIGNED_BYTE),
-                    image::ColorType::RGBA(16) => (gl::RGBA, gl::UNSIGNED_SHORT),
+                    image_decoding::ColorType::RGB(8) => (gl::RGB, gl::UNSIGNED_BYTE),
+                    image_decoding::ColorType::RGB(16) => (gl::RGB, gl::UNSIGNED_SHORT),
+                    image_decoding::ColorType::RGBA(8) => (gl::RGBA, gl::UNSIGNED_BYTE),
+                    image_decoding::ColorType::RGBA(16) => (gl::RGBA, gl::UNSIGNED_SHORT),
                     _ => {
                         //TODO make this case more distinct
                         return 0;
@@ -1934,8 +1901,8 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                 };
 
                 let pixel_ptr = match pixels {
-                    image::DecodingResult::U8(ref v) => v.as_ptr() as _,
-                    image::DecodingResult::U16(ref v) => v.as_ptr() as _,
+                    image_decoding::DecodingResult::U8(ref v) => v.as_ptr() as _,
+                    image_decoding::DecodingResult::U16(ref v) => v.as_ptr() as _,
                 };
 
                 unsafe {
@@ -1966,7 +1933,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
             }
         }
     }
-    return texture;
+    texture
 }
 
 // based on the rusttype gpu_cache example

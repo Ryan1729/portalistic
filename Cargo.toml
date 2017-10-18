@@ -11,7 +11,6 @@ sdl2 = "0.30"
 #TODO can this be a dev dependacy?
 libloading = "0.4"
 lazy_static = "0.2"
-image = "0.14.0"
 rusttype = "0.2.1"
 unicode-normalization = "0.1.5"
 
@@ -23,3 +22,6 @@ path = "./common"
 
 [dependencies.state_manipulation]
 path = "./state_manipulation"
+
+[dependencies.image_decoding]
+path = "./image_decoding"
