@@ -950,6 +950,7 @@ fn main() {
     let platform = Platform {
         draw_poly,
         draw_poly_with_matrix,
+        draw_poly_with_matrix_and_colours,
         draw_textured_poly,
         draw_textured_poly_with_matrix,
         draw_text,
@@ -1094,6 +1095,22 @@ fn get_frame_buffer(resources: &Resources, frame_buffer_index: usize) -> gl::typ
 // these `draw_` functions should probably batch draw calls to minimize shader switching,
 // but I'll be able to provide the same API and change to that later so it can wait
 fn draw_poly_with_matrix(world_matrix: [f32; 16], poly_index: usize, frame_buffer_index: usize) {
+    draw_poly_with_matrix_and_colours(
+        world_matrix,
+        (32.0 / 255.0, 32.0 / 255.0, 63.0 / 255.0, 1.0),
+        (128.0 / 255.0, 128.0 / 255.0, 32.0 / 255.0, 1.0),
+        poly_index,
+        frame_buffer_index,
+    )
+}
+
+fn draw_poly_with_matrix_and_colours(
+    world_matrix: [f32; 16],
+    fill: rgba,
+    outline: rgba,
+    poly_index: usize,
+    frame_buffer_index: usize,
+) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UseProgram(resources.colour_shader.program);
@@ -1109,14 +1126,16 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], poly_index: usize, frame_buffe
 
         let (start, end) = resources.vert_ranges[poly_index];
 
-        draw_verts_with_outline(
+        draw_coloured_verts_with_outline(
             &resources.ctx,
             start as _,
             ((end + 1 - start) / 2) as _,
             resources.vertex_buffer,
             &resources.colour_shader,
             frame_buffer,
-        );
+            fill,
+            outline,
+        )
     }
 }
 
@@ -1341,13 +1360,15 @@ unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {
     }
 }
 
-fn draw_verts_with_outline(
+fn draw_coloured_verts_with_outline(
     ctx: &gl::Gl,
     start: isize,
     vert_count: gl::types::GLsizei,
     vertex_buffer: gl::types::GLuint,
     colour_shader: &ColourShader,
     frame_buffer: gl::types::GLuint,
+    fill: rgba,
+    outline: rgba,
 ) {
     unsafe {
         begin_using_frame_buffer(ctx, frame_buffer);
@@ -1377,13 +1398,7 @@ fn draw_verts_with_outline(
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
         ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
-        ctx.Uniform4f(
-            colour_shader.colour_uniform,
-            32.0 / 255.0,
-            32.0 / 255.0,
-            63.0 / 255.0,
-            1.0,
-        );
+        ctx.Uniform4f(colour_shader.colour_uniform, fill.0, fill.1, fill.2, fill.3);
 
         ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
         ctx.StencilFunc(gl::EQUAL, 1, 1);
@@ -1393,10 +1408,10 @@ fn draw_verts_with_outline(
         //outline
         ctx.Uniform4f(
             colour_shader.colour_uniform,
-            128.0 / 255.0,
-            128.0 / 255.0,
-            32.0 / 255.0,
-            1.0,
+            outline.0,
+            outline.1,
+            outline.2,
+            outline.3,
         );
         ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
 
@@ -1404,7 +1419,6 @@ fn draw_verts_with_outline(
     }
 }
 
-//TODO can we pull a common sub-procedure out of this and draw_verts_with_outline?
 fn draw_verts_with_texture(
     ctx: &gl::Gl,
     start: isize,

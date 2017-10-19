@@ -41,15 +41,7 @@ fn make_state(rng: StdRng) -> State {
         mouse_held: false,
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
-        polys: Vec::new(),
-        tint_r: 0.1,
-        tint_g: 0.0,
-        tint_b: 0.0,
-        layer_on: false,
-        layer_alpha: 0.0,
     };
-
-    add_random_poly(&mut state);
 
     state
 }
@@ -74,12 +66,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
                 return true;
             }
-            Event::KeyDown(Keycode::Space) => {
-                add_random_poly(state);
+            Event::KeyDown(Keycode::L) => {
+                state.cam_y += state.zoom * TRANSLATION_SCALE;
             }
-            Event::KeyDown(Keycode::R) => {
-                state.polys.clear();
-                add_random_poly(state);
+            Event::KeyDown(Keycode::K) => {
+                state.cam_y -= state.zoom * TRANSLATION_SCALE;
+            }
+            Event::KeyDown(Keycode::Semicolon) => {
+                state.cam_x += state.zoom * TRANSLATION_SCALE;
+            }
+            Event::KeyDown(Keycode::J) => {
+                state.cam_x -= state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Up) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
@@ -98,10 +95,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.cam_y = 0.0;
                 state.zoom = 1.0;
             }
-            Event::KeyDown(Keycode::W) => {
+            Event::KeyDown(Keycode::S) => {
                 state.zoom *= 1.25;
             }
-            Event::KeyDown(Keycode::S) => {
+            Event::KeyDown(Keycode::W) => {
                 state.zoom /= 1.25;
                 if state.zoom == 0.0 {
                     state.zoom = std::f32::MIN_POSITIVE / TRANSLATION_SCALE;
@@ -192,144 +189,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let view = mat4x4_mul(&camera, &projection);
 
-    const ATTRACTOR_SCALE: f32 = 64.0;
+    (p.draw_poly_with_matrix)(view, 1, 0);
 
-    let (tint_r, tint_g, tint_b) = {
-        let (x, y, z) = (
-            state.tint_r * ATTRACTOR_SCALE,
-            state.tint_g * ATTRACTOR_SCALE,
-            state.tint_b * ATTRACTOR_SCALE,
-        );
-
-        //Lorentz Attractor
-
-        let a = 10.0;
-
-        let b = 28.0;
-
-        let c = 8.0 / 3.0;
-
-        let t = 1.0 / 256.0;
-
-        let xt = x + t * a * (y - x);
-
-        let yt = y + t * (x * (b - z) - y);
-
-        let zt = z + t * (x * y - c * z);
-
-        (
-            xt / ATTRACTOR_SCALE,
-            yt / ATTRACTOR_SCALE,
-            zt / ATTRACTOR_SCALE,
-        )
-    };
-
-    let texture_spec = (0.0, 0.0, 1.0, 1.0, 0, tint_r, tint_g, tint_b, 0.0);
-
-    for poly in state.polys.iter() {
-        let world_matrix = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            poly.x,
-            poly.y,
-            0.0,
-            1.0,
-        ];
-
-        let matrix = mat4x4_mul(&world_matrix, &view);
-
-        (p.draw_textured_poly_with_matrix)(matrix, poly.index, texture_spec, 0);
-
-        state.tint_r = tint_r;
-        state.tint_g = tint_g;
-        state.tint_b = tint_b;
-    }
-
-    (p.draw_text)(
-        "Hello Text rendering!",
-        (0.0, 0.60),
-        0.5,
-        96.0,
-        [1.0, 1.0, 0.0, 1.0],
-        0,
-    );
-    (p.draw_text)(
-        "Hello Text rendering!",
-        (0.25, -0.25),
-        1.0,
-        96.0,
-        [0.0, 1.0, 1.0, 0.5],
-        0,
-    );
-
-    let label = if state.layer_on {
-        "fade out"
-    } else {
-        "fade in"
-    };
-
-    const FADE_RATE: f32 = 1.0 / 24.0;
-    state.layer_alpha += if state.layer_on {
-        FADE_RATE
-    } else {
-        -FADE_RATE
-    };
-
-    state.layer_alpha = clamp(state.layer_alpha, 0.0, 1.0);
-
-    fn clamp(current: f32, min: f32, max: f32) -> f32 {
-        if current > max {
-            max
-        } else if current < min {
-            min
-        } else {
-            current
-        }
-    }
-
-
-    {
-        let layer = 1;
-        let texture_spec = (0.05, 0.05, 0.95, 0.95, 1, 0.0, 0.0, 0.0, 0.0);
-        (p.draw_textured_poly_with_matrix)(camera, 2, texture_spec, layer);
-
-        // (p.draw_text)(
-        //     "This doesn't work yet!",
-        //     (0.25, 0.0),
-        //     1.0,
-        //     96.0,
-        //     [0.0, 1.0, 1.0, 0.5],
-        //     layer,
-        // );
-
-        // (p.draw_poly_with_matrix)(scale_translation(0.25, -0.8, -0.25), 1, layer);
-    }
-
-
-    (p.draw_layer)(1, state.layer_alpha);
-
-    if labeled_button(
+    labeled_button(
         p,
         &mut state.ui_context,
-        label,
-        (-1.0 + 0.25, 1.0 - 0.125),
-        1,
+        "Menu",
+        (-0.75, 0.875),
+        12,
         (mouse_x, mouse_y),
         mouse_button_state,
-    ) {
-        state.layer_on = !state.layer_on;
-    }
-
+    );
 
     false
 }
@@ -361,19 +231,23 @@ fn labeled_button(
         },
     );
 
-    match button_outcome.draw_state {
-        Pressed => {
-            let texture_spec = (0.0, 0.0, 1.0, 1.0, 1, 0.0, 0.0, 0.0, 0.0);
-            (p.draw_textured_poly_with_matrix)(camera, 6, texture_spec, 0);
-        }
-        Hover => {
-            let texture_spec = (0.0, 0.0, 1.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0);
-            (p.draw_textured_poly_with_matrix)(camera, 6, texture_spec, 0);
-        }
-        Inactive => {
-            (p.draw_poly_with_matrix)(camera, 6, 0);
-        }
-    }
+    let (fill, outline) = match button_outcome.draw_state {
+        Pressed => (
+            (32.0 / 255.0, 32.0 / 255.0, 63.0 / 255.0, 1.0),
+            (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
+        ),
+        Hover => (
+            (63.0 / 255.0, 63.0 / 255.0, 128.0 / 255.0, 1.0),
+            (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
+        ),
+        Inactive => (
+            (63.0 / 255.0, 63.0 / 255.0, 128.0 / 255.0, 1.0),
+            (0.0, 0.0, 0.0, 0.0),
+        ),
+    };
+
+    (p.draw_poly_with_matrix_and_colours)(camera, fill, outline, 6, 0);
+
 
     let font_scale = if label.len() > 8 { 18.0 } else { 24.0 };
 
@@ -484,17 +358,6 @@ fn scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
 
 fn inverse_scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
     scale_translation(1.0 / scale, -x_offest / scale, -y_offset / scale)
-}
-
-fn add_random_poly(state: &mut State) {
-    let poly = Polygon {
-        x: state.rng.gen_range(-9.0, 10.0) / 10.0,
-        y: state.rng.gen_range(-9.0, 10.0) / 10.0,
-        index: state.rng.gen_range(0, 6),
-        scale: state.rng.gen_range(0.0, 2.0),
-    };
-
-    state.polys.push(poly);
 }
 
 //These are the verticies of the polygons which can be drawn.
