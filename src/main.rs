@@ -63,14 +63,15 @@ impl Application {
         platform: &Platform,
         state: &mut State,
         events: &Vec<common::Event>,
+        lag: &mut u32,
     ) -> bool {
         unsafe {
             let f = self.library
-                .get::<fn(&Platform, &mut State, &Vec<common::Event>) -> bool>(
+                .get::<fn(&Platform, &mut State, &Vec<common::Event>, &mut u32) -> bool>(
                     b"update_and_render\0",
                 )
                 .unwrap();
-            f(platform, state, events)
+            f(platform, state, events, lag)
         }
     }
 
@@ -99,8 +100,9 @@ impl Application {
         platform: &Platform,
         state: &mut State,
         events: &mut Vec<common::Event>,
+        lag: &mut u32,
     ) -> bool {
-        state_manipulation::update_and_render(platform, state, events)
+        state_manipulation::update_and_render(platform, state, events, lag)
     }
 
     fn get_vert_vecs(&self) -> Vec<Vec<f32>> {
@@ -960,7 +962,9 @@ fn main() {
 
     let mut events = Vec::new();
 
-    app.update_and_render(&platform, &mut state, &mut events);
+    let mut lag = 16666666;
+
+    app.update_and_render(&platform, &mut state, &mut events, &mut lag);
 
     opengl_error_check!();
 
@@ -971,8 +975,14 @@ fn main() {
 
         let mut event_pump = sdl_context.event_pump().unwrap();
 
+        let mut start_of_last_frame = std::time::Instant::now();
+
         loop {
             let start = std::time::Instant::now();
+
+            lag += start.duration_since(start_of_last_frame).subsec_nanos();
+
+            start_of_last_frame = start;
 
             events.clear();
 
@@ -1027,7 +1037,7 @@ fn main() {
                 resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
             }
 
-            if app.update_and_render(&platform, &mut state, &mut events) {
+            if app.update_and_render(&platform, &mut state, &mut events, &mut lag) {
                 //quit requested
                 break;
             }

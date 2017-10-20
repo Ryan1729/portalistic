@@ -29,6 +29,8 @@ pub struct State {
     pub mouse_held: bool,
     pub window_wh: (f32, f32),
     pub ui_context: UIContext,
+    pub x: f32,
+    pub y: f32,
 }
 
 //Rgba and RGBA both seem worse than this
@@ -50,6 +52,7 @@ pub enum Event {
 
 pub type UiId = i32;
 
+#[derive(Debug)]
 pub struct UIContext {
     pub hot: UiId,
     pub active: UiId,
@@ -384,6 +387,11 @@ pub fn mat4x4_vector_mul_divide(
 ) -> (f32, f32, f32, f32) {
     let (x, y, z, w) = mat4x4_vector_mul(m, v_0, v_1, v_2, v_3);
     (x / w, y / w, z / w, 1.0)
+}
+
+// Precise method, which guarantees v = v1 when t = 1.
+pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
+    (1.0 - t) * v0 + t * v1
 }
 
 //combined from https://github.com/AngryLawyer/rust-sdl2/blob/master/sdl2-sys/src/keycode.rs

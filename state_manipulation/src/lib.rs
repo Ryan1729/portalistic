@@ -41,6 +41,8 @@ fn make_state(rng: StdRng) -> State {
         mouse_held: false,
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
+        x: 0.0,
+        y: 0.0,
     };
 
     state
@@ -50,7 +52,13 @@ const TRANSLATION_SCALE: f32 = 0.0625;
 
 #[no_mangle]
 //returns true if quit requested
-pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event>) -> bool {
+//lag is expected to be in nanoseconds
+pub fn update_and_render(
+    p: &Platform,
+    state: &mut State,
+    events: &mut Vec<Event>,
+    lag: &mut u32,
+) -> bool {
     let mut mouse_pressed = false;
     let mut mouse_released = false;
 
@@ -95,6 +103,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.cam_y = 0.0;
                 state.zoom = 1.0;
             }
+            Event::KeyDown(Keycode::R) => if cfg!(debug_assertions) {
+                *state = new_state();
+            },
             Event::KeyDown(Keycode::S) => {
                 state.zoom *= 1.25;
             }
@@ -189,7 +200,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let view = mat4x4_mul(&camera, &projection);
 
-    (p.draw_poly_with_matrix)(view, 1, 0);
+    (p.draw_poly_with_matrix)(
+        mat4x4_mul(&view, &scale_translation(1.0 / 16.0, state.x, state.y)),
+        1,
+        0,
+    );
+
+    let background_button_outcome = button_logic(
+        &mut state.ui_context,
+        Button {
+            id: 1,
+            pointer_inside: true,
+            state: mouse_button_state,
+        },
+    );
 
     labeled_button(
         p,
@@ -199,6 +223,49 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         12,
         (mouse_x, mouse_y),
         mouse_button_state,
+    );
+
+    let moving = match background_button_outcome.draw_state {
+        Pressed => true,
+        _ => false,
+    };
+
+    if moving {
+        (p.draw_text)(
+            &format!("{:?}", state.ui_context),
+            (0.0, -0.75),
+            1.0,
+            36.0,
+            [0.0, 1.0, 0.5, 0.5],
+            0,
+        );
+    }
+
+    const NS_PER_UPDATE: u32 = 1000;
+
+    while *lag >= NS_PER_UPDATE {
+        if moving {
+            let player_speed: f32 = 1.0 / 2f32.powi(22);
+
+            let dx = mouse_x - state.x;
+            let dy = mouse_y - state.y;
+
+            let angle = f32::atan2(dy, dx);
+
+            state.x += angle.cos() * player_speed;
+            state.y += angle.sin() * player_speed;
+        }
+
+        *lag -= NS_PER_UPDATE;
+    }
+
+    (p.draw_text)(
+        &format!("({:.5}, {:.5})", state.x, state.y),
+        (0.0, -0.875),
+        1.0,
+        36.0,
+        [0.0, 1.0, 1.0, 0.5],
+        0,
     );
 
     false
