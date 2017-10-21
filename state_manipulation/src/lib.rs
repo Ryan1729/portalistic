@@ -31,7 +31,11 @@ pub fn new_state() -> State {
     make_state(rng)
 }
 
-fn make_state(rng: StdRng) -> State {
+fn make_state(mut rng: StdRng) -> State {
+    let mut portals = Vec::new();
+
+    add_random_portal_pair(&mut rng, &mut portals);
+
     let mut state = State {
         rng,
         cam_x: 0.0,
@@ -43,9 +47,31 @@ fn make_state(rng: StdRng) -> State {
         ui_context: UIContext::new(),
         x: 0.0,
         y: 0.0,
+        portals,
+        portal_smell: 0,
     };
 
     state
+}
+
+fn add_random_portal_pair(rng: &mut StdRng, portals: &mut Vec<Portal>) {
+    let x1 = rng.gen_range(-0.875, 0.875);
+    let y1 = rng.gen_range(-0.875, 0.875);
+    let x2 = rng.gen_range(-0.875, 0.875);
+    let y2 = rng.gen_range(-0.875, 0.875);
+
+    let len = portals.len();
+
+    portals.push(Portal {
+        x: x1,
+        y: y1,
+        target: len + 1,
+    });
+    portals.push(Portal {
+        x: x2,
+        y: y2,
+        target: len,
+    });
 }
 
 const TRANSLATION_SCALE: f32 = 0.0625;
@@ -73,6 +99,9 @@ pub fn update_and_render(
         match *event {
             Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
                 return true;
+            }
+            Event::KeyDown(Keycode::P) => {
+                add_random_portal_pair(&mut state.rng, &mut state.portals);
             }
             Event::KeyDown(Keycode::L) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
@@ -200,12 +229,6 @@ pub fn update_and_render(
 
     let view = mat4x4_mul(&camera, &projection);
 
-    (p.draw_poly_with_matrix)(
-        mat4x4_mul(&view, &scale_translation(1.0 / 16.0, state.x, state.y)),
-        1,
-        0,
-    );
-
     let background_button_outcome = button_logic(
         &mut state.ui_context,
         Button {
@@ -256,7 +279,21 @@ pub fn update_and_render(
             state.y += angle.sin() * player_speed;
         }
 
-        *lag -= NS_PER_UPDATE;
+        if state.portal_smell == 0 {
+            if let Some((x, y)) = overlapping_portal_target_coords(&state.portals, state.x, state.y)
+            {
+                state.x = x;
+                state.y = y;
+
+                const PORTAL_SMELL_NS_PER: u64 = 3_000_000_000;
+
+                state.portal_smell += PORTAL_SMELL_NS_PER;
+            }
+        }
+
+        state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
+
+        *lag = lag.saturating_sub(NS_PER_UPDATE);
     }
 
     (p.draw_text)(
@@ -268,7 +305,53 @@ pub fn update_and_render(
         0,
     );
 
+    for portal in state.portals.iter() {
+        (p.draw_poly_with_matrix)(
+            mat4x4_mul(&view, &scale_translation(1.0 / 16.0, portal.x, portal.y)),
+            4,
+            0,
+        );
+    }
+
+    (p.draw_poly_with_matrix)(
+        mat4x4_mul(&view, &scale_translation(1.0 / 16.0, state.x, state.y)),
+        1,
+        0,
+    );
+
+
     false
+}
+
+fn overlapping_portal_target_coords(portals: &Vec<Portal>, x: f32, y: f32) -> Option<(f32, f32)> {
+    //curently I'm not expecting more than  16-ish portals on a screen,
+    //and eventually I expect screens to be separated out so O(N) will
+    //probably be fine.
+
+    let mut result = None;
+
+    const MINIMUM_DISTANCE_SQ: f32 = 0.0005;
+
+    let mut smallest_so_far = std::f32::INFINITY;
+
+    for portal in portals.iter() {
+        let distance_sq = get_euclidean_sq((x, y), (portal.x, portal.y));
+
+        if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {
+            if let Some(target_portal) = portals.get(portal.target) {
+                result = Some((target_portal.x, target_portal.y));
+            }
+
+
+            smallest_so_far = distance_sq;
+        }
+    }
+
+    result
+}
+
+fn get_euclidean_sq((x1, y1): (f32, f32), (x2, y2): (f32, f32)) -> f32 {
+    (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)
 }
 
 fn labeled_button(

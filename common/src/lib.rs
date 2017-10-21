@@ -31,7 +31,17 @@ pub struct State {
     pub ui_context: UIContext,
     pub x: f32,
     pub y: f32,
+    pub portals: Vec<Portal>,
+    pub portal_smell: u64,
 }
+
+pub struct Portal {
+    pub x: f32,
+    pub y: f32,
+    pub target: PortalTarget,
+}
+
+pub type PortalTarget = usize;
 
 //Rgba and RGBA both seem worse than this
 #[allow(non_camel_case_types)]
