@@ -184,21 +184,6 @@ version = "0.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "live-code-sdl2-opengl-2_1-template"
-version = "0.1.0"
-dependencies = [
- "common 0.1.0",
- "image_decoding 0.1.0",
- "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open_gl_bindings 0.1.0",
- "rusttype 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "sdl2 0.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "state_manipulation 0.1.0",
- "unicode-normalization 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "log"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -286,6 +271,21 @@ dependencies = [
  "deflate 0.7.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "inflate 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-iter 0.1.33 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "portalistic"
+version = "0.1.0"
+dependencies = [
+ "common 0.1.0",
+ "image_decoding 0.1.0",
+ "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "open_gl_bindings 0.1.0",
+ "rusttype 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sdl2 0.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "state_manipulation 0.1.0",
+ "unicode-normalization 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

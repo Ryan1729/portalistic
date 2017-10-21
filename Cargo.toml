@@ -1,5 +1,5 @@
 [package]
-name = "live-code-sdl2-opengl-2_1-template"
+name = "portalistic"
 version = "0.1.0"
 authors = ["Ryan1729 <Ryan1729@gmail.com>"]
 
