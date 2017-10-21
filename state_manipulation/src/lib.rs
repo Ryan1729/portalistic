@@ -253,17 +253,7 @@ pub fn update_and_render(
         _ => false,
     };
 
-    if moving {
-        (p.draw_text)(
-            &format!("{:?}", state.ui_context),
-            (0.0, -0.75),
-            1.0,
-            36.0,
-            [0.0, 1.0, 0.5, 0.5],
-            0,
-        );
-    }
-
+    const PORTAL_SMELL_NS_PER: u64 = 3_000_000_000;
     const NS_PER_UPDATE: u32 = 1000;
 
     while *lag >= NS_PER_UPDATE {
@@ -284,8 +274,6 @@ pub fn update_and_render(
             {
                 state.x = x;
                 state.y = y;
-
-                const PORTAL_SMELL_NS_PER: u64 = 3_000_000_000;
 
                 state.portal_smell += PORTAL_SMELL_NS_PER;
             }
@@ -313,8 +301,29 @@ pub fn update_and_render(
         );
     }
 
-    (p.draw_poly_with_matrix)(
+    let mut smell_fraction = state.portal_smell as f32 / PORTAL_SMELL_NS_PER as f32;
+
+    smell_fraction = if smell_fraction > 1.0 {
+        1.0
+    } else if smell_fraction < 0.0 {
+        0.0
+    } else {
+        smell_fraction
+    };
+
+    (p.draw_poly_with_matrix_and_colours)(
         mat4x4_mul(&view, &scale_translation(1.0 / 16.0, state.x, state.y)),
+        (
+            smell_fraction,
+            smell_fraction,
+            if smell_fraction > 63.0 / 255.0 {
+                smell_fraction
+            } else {
+                63.0 / 255.0
+            },
+            1.0,
+        ),
+        (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
         1,
         0,
     );
