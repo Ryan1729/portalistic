@@ -3,6 +3,7 @@ extern crate rand;
 
 use common::*;
 use common::Projection::*;
+use common::Phase::*;
 
 use rand::{Rng, SeedableRng, StdRng};
 
@@ -50,6 +51,7 @@ fn make_state(mut rng: StdRng) -> State {
         portals,
         portal_smell: 0,
         goals: vec![rng.gen()],
+        phase: Move,
     };
 
     state
@@ -61,18 +63,19 @@ fn add_random_portal_pair(rng: &mut StdRng, portals: &mut Vec<Portal>) {
     let x2 = rng.gen_range(-0.875, 0.875);
     let y2 = rng.gen_range(-0.875, 0.875);
 
-    let len = portals.len();
+    add_first_portal(portals, x1, y1);
+    add_second_portal(portals, x2, y2);
+}
 
-    portals.push(Portal {
-        x: x1,
-        y: y1,
-        target: len + 1,
-    });
-    portals.push(Portal {
-        x: x2,
-        y: y2,
-        target: len,
-    });
+fn add_first_portal(portals: &mut Vec<Portal>, x: f32, y: f32) {
+    let target = portals.len() + 1;
+
+    portals.push(Portal { x, y, target });
+}
+fn add_second_portal(portals: &mut Vec<Portal>, x: f32, y: f32) {
+    let target = portals.len() - 1;
+
+    portals.push(Portal { x, y, target });
 }
 
 const TRANSLATION_SCALE: f32 = 0.0625;
@@ -101,8 +104,11 @@ pub fn update_and_render(
             Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
                 return true;
             }
-            Event::KeyDown(Keycode::P) => {
+            Event::KeyDown(Keycode::Num9) => {
                 add_random_portal_pair(&mut state.rng, &mut state.portals);
+            }
+            Event::KeyDown(Keycode::P) => {
+                state.phase = PlaceFirstPortal;
             }
             Event::KeyDown(Keycode::L) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
@@ -249,10 +255,7 @@ pub fn update_and_render(
         mouse_button_state,
     );
 
-    let moving = match background_button_outcome.draw_state {
-        Pressed => true,
-        _ => false,
-    };
+
 
     // (p.draw_text)(
     //     &format!("lag ms: {:.5}", *lag / 1_000),
@@ -264,39 +267,66 @@ pub fn update_and_render(
     // );
 
 
+
+    match state.phase {
+        PlaceFirstPortal => if background_button_outcome.clicked {
+            add_first_portal(&mut state.portals, mouse_x, mouse_y);
+
+            state.phase = PlaceSecondPortal;
+        },
+        PlaceSecondPortal => if background_button_outcome.clicked {
+            add_second_portal(&mut state.portals, mouse_x, mouse_y);
+
+            state.phase = Move;
+        },
+        _ => {}
+    }
+
+
     const PORTAL_SMELL_NS_PER: u64 = 3_000_000_000;
     const NS_PER_UPDATE: u32 = 1_000_000;
 
     while *lag >= NS_PER_UPDATE {
-        if moving {
-            let player_speed: f32 = 1.0 / 2f32.powi(12);
+        match state.phase {
+            Move => {
+                let moving = match background_button_outcome.draw_state {
+                    Pressed => true,
+                    _ => false,
+                };
 
-            let dx = mouse_x - state.x;
-            let dy = mouse_y - state.y;
+                if moving {
+                    let player_speed: f32 = 1.0 / 2f32.powi(12);
 
-            let angle = f32::atan2(dy, dx);
+                    let dx = mouse_x - state.x;
+                    let dy = mouse_y - state.y;
 
-            state.x += angle.cos() * player_speed;
-            state.y += angle.sin() * player_speed;
-        }
+                    let angle = f32::atan2(dy, dx);
 
-        if state.portal_smell == 0 {
-            if let Some((x, y)) = overlapping_portal_target_coords(&state.portals, state.x, state.y)
-            {
-                state.x = x;
-                state.y = y;
+                    state.x += angle.cos() * player_speed;
+                    state.y += angle.sin() * player_speed;
+                }
 
-                state.portal_smell += PORTAL_SMELL_NS_PER;
+                if state.portal_smell == 0 {
+                    if let Some((x, y)) =
+                        overlapping_portal_target_coords(&state.portals, state.x, state.y)
+                    {
+                        state.x = x;
+                        state.y = y;
+
+                        state.portal_smell += PORTAL_SMELL_NS_PER;
+                    }
+                }
+
+                if let Some(i) = overlapping_goal_index(&state.goals, state.x, state.y) {
+                    state.goals.swap_remove(i);
+
+                    state.goals.push(state.rng.gen());
+                }
+
+                state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
             }
+            _ => {}
         }
-
-        if let Some(i) = overlapping_goal_index(&state.goals, state.x, state.y) {
-            state.goals.swap_remove(i);
-
-            state.goals.push(state.rng.gen());
-        }
-
-        state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
 
         *lag = lag.saturating_sub(NS_PER_UPDATE);
     }
@@ -310,12 +340,16 @@ pub fn update_and_render(
         0,
     );
 
-    for portal in state.portals.iter() {
+    let draw_portal = |x: f32, y: f32| {
         (p.draw_poly_with_matrix)(
-            mat4x4_mul(&view, &scale_translation(1.0 / 16.0, portal.x, portal.y)),
+            mat4x4_mul(&view, &scale_translation(1.0 / 16.0, x, y)),
             4,
             0,
         );
+    };
+
+    for portal in state.portals.iter() {
+        draw_portal(portal.x, portal.y);
     }
     for goal in state.goals.iter() {
         (p.draw_poly_with_matrix_and_colours)(
@@ -353,6 +387,13 @@ pub fn update_and_render(
         1,
         0,
     );
+
+    match state.phase {
+        PlaceFirstPortal | PlaceSecondPortal => {
+            draw_portal(mouse_x, mouse_y);
+        }
+        _ => {}
+    }
 
     false
 }

@@ -34,6 +34,14 @@ pub struct State {
     pub portals: Vec<Portal>,
     pub portal_smell: u64,
     pub goals: Vec<Goal>,
+    pub phase: Phase,
+}
+
+#[derive(Debug)]
+pub enum Phase {
+    Move,
+    PlaceFirstPortal,
+    PlaceSecondPortal,
 }
 
 pub struct Portal {
