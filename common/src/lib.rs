@@ -1,6 +1,6 @@
 extern crate rand;
 
-use rand::{Rng, StdRng};
+use rand::{Rand, Rng, StdRng};
 
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
 pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
@@ -33,6 +33,7 @@ pub struct State {
     pub y: f32,
     pub portals: Vec<Portal>,
     pub portal_smell: u64,
+    pub goals: Vec<Goal>,
 }
 
 pub struct Portal {
@@ -42,6 +43,20 @@ pub struct Portal {
 }
 
 pub type PortalTarget = usize;
+
+pub struct Goal {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Rand for Goal {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        Goal {
+            x: rng.gen_range(-0.875, 0.875),
+            y: rng.gen_range(-0.875, 0.875),
+        }
+    }
+}
 
 //Rgba and RGBA both seem worse than this
 #[allow(non_camel_case_types)]

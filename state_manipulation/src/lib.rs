@@ -49,6 +49,7 @@ fn make_state(mut rng: StdRng) -> State {
         y: 0.0,
         portals,
         portal_smell: 0,
+        goals: vec![rng.gen()],
     };
 
     state
@@ -253,12 +254,22 @@ pub fn update_and_render(
         _ => false,
     };
 
+    // (p.draw_text)(
+    //     &format!("lag ms: {:.5}", *lag / 1_000),
+    //     (0.0, 0.875),
+    //     1.0,
+    //     36.0,
+    //     [0.0, 1.0, 1.0, 0.5],
+    //     0,
+    // );
+
+
     const PORTAL_SMELL_NS_PER: u64 = 3_000_000_000;
-    const NS_PER_UPDATE: u32 = 1000;
+    const NS_PER_UPDATE: u32 = 1_000_000;
 
     while *lag >= NS_PER_UPDATE {
         if moving {
-            let player_speed: f32 = 1.0 / 2f32.powi(22);
+            let player_speed: f32 = 1.0 / 2f32.powi(12);
 
             let dx = mouse_x - state.x;
             let dy = mouse_y - state.y;
@@ -279,6 +290,12 @@ pub fn update_and_render(
             }
         }
 
+        if let Some(i) = overlapping_goal_index(&state.goals, state.x, state.y) {
+            state.goals.swap_remove(i);
+
+            state.goals.push(state.rng.gen());
+        }
+
         state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
 
         *lag = lag.saturating_sub(NS_PER_UPDATE);
@@ -297,6 +314,15 @@ pub fn update_and_render(
         (p.draw_poly_with_matrix)(
             mat4x4_mul(&view, &scale_translation(1.0 / 16.0, portal.x, portal.y)),
             4,
+            0,
+        );
+    }
+    for goal in state.goals.iter() {
+        (p.draw_poly_with_matrix_and_colours)(
+            mat4x4_mul(&view, &scale_translation(1.0 / 16.0, goal.x, goal.y)),
+            (192.0 / 255.0, 48.0 / 255.0, 48.0 / 255.0, 0.375),
+            (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
+            3,
             0,
         );
     }
@@ -328,8 +354,30 @@ pub fn update_and_render(
         0,
     );
 
-
     false
+}
+
+fn overlapping_goal_index(goals: &Vec<Goal>, x: f32, y: f32) -> Option<usize> {
+    //We can just cap how many goals the player can have at once
+    //so O(N) will probably be fine.
+
+    let mut result = None;
+
+    const MINIMUM_DISTANCE_SQ: f32 = 0.0005;
+
+    let mut smallest_so_far = std::f32::INFINITY;
+
+    for (i, goal) in goals.iter().enumerate() {
+        let distance_sq = get_euclidean_sq((x, y), (goal.x, goal.y));
+
+        if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {
+            result = Some(i);
+
+            smallest_so_far = distance_sq;
+        }
+    }
+
+    result
 }
 
 fn overlapping_portal_target_coords(portals: &Vec<Portal>, x: f32, y: f32) -> Option<(f32, f32)> {
@@ -350,7 +398,6 @@ fn overlapping_portal_target_coords(portals: &Vec<Portal>, x: f32, y: f32) -> Op
             if let Some(target_portal) = portals.get(portal.target) {
                 result = Some((target_portal.x, target_portal.y));
             }
-
 
             smallest_so_far = distance_sq;
         }
