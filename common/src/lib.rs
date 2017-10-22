@@ -35,6 +35,7 @@ pub struct State {
     pub portal_smell: u64,
     pub goals: Vec<Goal>,
     pub phase: Phase,
+    pub goal_nodes: Vec<GoalNode>,
 }
 
 #[derive(Debug)]
@@ -52,6 +53,7 @@ pub struct Portal {
 
 pub type PortalTarget = usize;
 
+#[derive(Debug)]
 pub struct Goal {
     pub x: f32,
     pub y: f32,
@@ -60,6 +62,21 @@ pub struct Goal {
 impl Rand for Goal {
     fn rand<R: Rng>(rng: &mut R) -> Self {
         Goal {
+            x: rng.gen_range(-0.875, 0.875),
+            y: rng.gen_range(-0.875, 0.875),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GoalNode {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Rand for GoalNode {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        GoalNode {
             x: rng.gen_range(-0.875, 0.875),
             y: rng.gen_range(-0.875, 0.875),
         }

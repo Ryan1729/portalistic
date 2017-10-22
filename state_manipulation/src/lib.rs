@@ -37,6 +37,8 @@ fn make_state(mut rng: StdRng) -> State {
 
     add_random_portal_pair(&mut rng, &mut portals);
 
+    let goal_nodes = vec![rng.gen()];
+
     let mut state = State {
         rng,
         cam_x: 0.0,
@@ -50,11 +52,31 @@ fn make_state(mut rng: StdRng) -> State {
         y: 0.0,
         portals,
         portal_smell: 0,
-        goals: vec![rng.gen()],
+        goals: vec![new_goal(&mut rng, &goal_nodes)],
         phase: Move,
+        goal_nodes,
     };
 
     state
+}
+
+fn new_goal(rng: &mut StdRng, goal_nodes: &Vec<GoalNode>) -> Goal {
+    const GOAL_NODE_RADIUS: f32 = 1.0 / 16.0;
+
+    if let Some(goal_node) = rng.choose(goal_nodes) {
+        Goal {
+            x: rng.gen_range(
+                goal_node.x - GOAL_NODE_RADIUS,
+                goal_node.x + GOAL_NODE_RADIUS,
+            ),
+            y: rng.gen_range(
+                goal_node.y - GOAL_NODE_RADIUS,
+                goal_node.y + GOAL_NODE_RADIUS,
+            ),
+        }
+    } else {
+        rng.gen()
+    }
 }
 
 fn add_random_portal_pair(rng: &mut StdRng, portals: &mut Vec<Portal>) {
@@ -109,6 +131,45 @@ pub fn update_and_render(
             }
             Event::KeyDown(Keycode::P) => {
                 state.phase = PlaceFirstPortal;
+            }
+            Event::KeyDown(Keycode::G) => {
+                fn new_goal_node(rng: &mut StdRng, goal_nodes: &Vec<GoalNode>) -> GoalNode {
+                    let mut possible_goal_nodes: Vec<GoalNode> = Vec::new();
+
+                    for _ in 0..8 {
+                        possible_goal_nodes.push(rng.gen());
+                    }
+
+                    //If this O(n^2) part ends up too slow, then we can probably
+                    //sample `goal_nodes` and pick the farthest away point from those
+                    let distance_sq_sums = possible_goal_nodes.iter().map(|possible_goal_node| {
+                        goal_nodes.iter().fold(0.0, |acc, goal_node| {
+                            acc
+                                + get_euclidean_sq(
+                                    (goal_node.x, goal_node.y),
+                                    (possible_goal_node.x, possible_goal_node.y),
+                                )
+                        })
+                    });
+
+                    let mut max_so_far = 0.0;
+                    let mut max_index = 0;
+                    for (i, distance_sq_sum) in distance_sq_sums.enumerate() {
+                        if distance_sq_sum >= max_so_far {
+                            max_index = i;
+                            max_so_far = distance_sq_sum;
+                        }
+                    }
+
+                    possible_goal_nodes
+                        .get(max_index)
+                        .cloned()
+                        .unwrap_or_else(|| rng.gen())
+                }
+
+                let new_node = new_goal_node(&mut state.rng, &state.goal_nodes);
+
+                state.goal_nodes.push(new_node);
             }
             Event::KeyDown(Keycode::L) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
@@ -320,7 +381,9 @@ pub fn update_and_render(
                 if let Some(i) = overlapping_goal_index(&state.goals, state.x, state.y) {
                     state.goals.swap_remove(i);
 
-                    state.goals.push(state.rng.gen());
+                    state
+                        .goals
+                        .push(new_goal(&mut state.rng, &state.goal_nodes));
                 }
 
                 state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
@@ -351,10 +414,24 @@ pub fn update_and_render(
     for portal in state.portals.iter() {
         draw_portal(portal.x, portal.y);
     }
+
+    for goal_node in state.goal_nodes.iter() {
+        (p.draw_poly_with_matrix_and_colours)(
+            mat4x4_mul(
+                &view,
+                &scale_translation(1.0 / 8.0, goal_node.x, goal_node.y),
+            ),
+            (0.0, 0.0, 0.0, 0.0),
+            (192.0 / 255.0, 48.0 / 255.0, 48.0 / 255.0, 0.375),
+            3,
+            0,
+        );
+    }
+
     for goal in state.goals.iter() {
         (p.draw_poly_with_matrix_and_colours)(
             mat4x4_mul(&view, &scale_translation(1.0 / 16.0, goal.x, goal.y)),
-            (192.0 / 255.0, 48.0 / 255.0, 48.0 / 255.0, 0.375),
+            (83.0 / 255.0, 36.0 / 255.0, 36.0 / 255.0, 1.0),
             (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
             3,
             0,
@@ -394,6 +471,8 @@ pub fn update_and_render(
         }
         _ => {}
     }
+
+
 
     false
 }
