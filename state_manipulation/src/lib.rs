@@ -33,11 +33,19 @@ pub fn new_state() -> State {
 }
 
 fn make_state(mut rng: StdRng) -> State {
-    let mut portals = Vec::new();
-
-    add_random_portal_pair(&mut rng, &mut portals);
-
     let goal_nodes = vec![rng.gen()];
+
+    let mut screens = vec![
+        Screen {
+            goals: vec![new_goal(&mut rng, &goal_nodes)],
+            goal_nodes,
+            ..Default::default()
+        },
+        Default::default(),
+    ];
+
+    add_random_portal_pair(&mut rng, &mut screens, 0, 1);
+
 
     let mut state = State {
         rng,
@@ -50,11 +58,10 @@ fn make_state(mut rng: StdRng) -> State {
         ui_context: UIContext::new(),
         x: 0.0,
         y: 0.0,
-        portals,
+        screens,
+        screen_index: 0,
         portal_smell: 0,
-        goals: vec![new_goal(&mut rng, &goal_nodes)],
         phase: Move,
-        goal_nodes,
     };
 
     state
@@ -79,25 +86,63 @@ fn new_goal(rng: &mut StdRng, goal_nodes: &Vec<GoalNode>) -> Goal {
     }
 }
 
-fn add_random_portal_pair(rng: &mut StdRng, portals: &mut Vec<Portal>) {
-    let x1 = rng.gen_range(-0.875, 0.875);
-    let y1 = rng.gen_range(-0.875, 0.875);
-    let x2 = rng.gen_range(-0.875, 0.875);
-    let y2 = rng.gen_range(-0.875, 0.875);
+fn add_random_portal_pair(
+    rng: &mut StdRng,
+    screens: &mut Vec<Screen>,
+    source_screen_index: ScreenIndex,
+    target_screen_index: ScreenIndex,
+) {
+    let first_portal_spec = PortalSpec {
+        x: rng.gen_range(-0.875, 0.875),
+        y: rng.gen_range(-0.875, 0.875),
+        screen_index: source_screen_index,
+    };
 
-    add_first_portal(portals, x1, y1);
-    add_second_portal(portals, x2, y2);
+    let second_portal_spec = PortalSpec {
+        x: rng.gen_range(-0.875, 0.875),
+        y: rng.gen_range(-0.875, 0.875),
+        screen_index: target_screen_index,
+    };
+
+    add_portal_pair(screens, first_portal_spec, second_portal_spec)
 }
 
-fn add_first_portal(portals: &mut Vec<Portal>, x: f32, y: f32) {
-    let target = portals.len() + 1;
+fn add_portal_pair(screens: &mut Vec<Screen>, first: PortalSpec, second: PortalSpec) {
+    match get_portals_mut_parts_pair(screens, first.screen_index, second.screen_index) {
+        Pair::Both(first_portals, second_portals) => {
+            //A `PortalSpec`'s `screen_index` indicates which screen to insert the portal into.
+            //A `PortalTarget`'s `screen_index` field stores which screen it leads to.
+            //The `target` field is the index in the other `portals` Vec where the other portal
+            //will be placed.
+            let first_target = PortalTarget {
+                screen_index: second.screen_index,
+                target: second_portals.len(),
+            };
+            let second_target = PortalTarget {
+                screen_index: first.screen_index,
+                target: first_portals.len(),
+            };
 
-    portals.push(Portal { x, y, target });
-}
-fn add_second_portal(portals: &mut Vec<Portal>, x: f32, y: f32) {
-    let target = portals.len() - 1;
+            first_portals.push(Portal::from_spec(first, first_target));
+            second_portals.push(Portal::from_spec(second, second_target));
+        }
+        Pair::One(portals) => {
+            let len = portals.len();
 
-    portals.push(Portal { x, y, target });
+            let first_target = PortalTarget {
+                screen_index: second.screen_index,
+                target: len + 1,
+            };
+            let second_target = PortalTarget {
+                screen_index: first.screen_index,
+                target: len,
+            };
+
+            portals.push(Portal::from_spec(first, first_target));
+            portals.push(Portal::from_spec(second, second_target));
+        }
+        Pair::None => {}
+    }
 }
 
 const TRANSLATION_SCALE: f32 = 0.0625;
@@ -126,11 +171,9 @@ pub fn update_and_render(
             Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
                 return true;
             }
-            Event::KeyDown(Keycode::Num9) => {
-                add_random_portal_pair(&mut state.rng, &mut state.portals);
-            }
             Event::KeyDown(Keycode::P) => {
-                state.phase = PlaceFirstPortal;
+                //TODO allow selecting which screens portals will be placed on
+                state.phase = PlaceFirstPortal((0, 1), state.screen_index);
             }
             Event::KeyDown(Keycode::G) => {
                 fn new_goal_node(rng: &mut StdRng, goal_nodes: &Vec<GoalNode>) -> GoalNode {
@@ -167,9 +210,11 @@ pub fn update_and_render(
                         .unwrap_or_else(|| rng.gen())
                 }
 
-                let new_node = new_goal_node(&mut state.rng, &state.goal_nodes);
+                if let Some(screen) = state.screens.get_mut(state.screen_index) {
+                    let new_node = new_goal_node(&mut state.rng, &screen.goal_nodes);
 
-                state.goal_nodes.push(new_node);
+                    screen.goal_nodes.push(new_node);
+                }
             }
             Event::KeyDown(Keycode::L) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
@@ -327,19 +372,36 @@ pub fn update_and_render(
     //     0,
     // );
 
-
-
     match state.phase {
-        PlaceFirstPortal => if background_button_outcome.clicked {
-            add_first_portal(&mut state.portals, mouse_x, mouse_y);
+        PlaceFirstPortal((source_screen_index, target_screen_index), previous_screen_index) => {
+            state.screen_index = source_screen_index;
+            if background_button_outcome.clicked {
+                let portal_spec = PortalSpec {
+                    x: mouse_x,
+                    y: mouse_y,
+                    screen_index: source_screen_index,
+                };
 
-            state.phase = PlaceSecondPortal;
-        },
-        PlaceSecondPortal => if background_button_outcome.clicked {
-            add_second_portal(&mut state.portals, mouse_x, mouse_y);
+                state.phase =
+                    PlaceSecondPortal(target_screen_index, portal_spec, previous_screen_index);
+            }
+        }
+        PlaceSecondPortal(target_screen_index, first_portal_spec, previous_screen_index) => {
+            state.screen_index = target_screen_index;
 
-            state.phase = Move;
-        },
+            if background_button_outcome.clicked {
+                let second_portal_spec = PortalSpec {
+                    x: mouse_x,
+                    y: mouse_y,
+                    screen_index: target_screen_index,
+                };
+
+                add_portal_pair(&mut state.screens, first_portal_spec, second_portal_spec);
+
+                state.phase = Move;
+                state.screen_index = previous_screen_index;
+            }
+        }
         _ => {}
     }
 
@@ -368,22 +430,32 @@ pub fn update_and_render(
                 }
 
                 if state.portal_smell == 0 {
-                    if let Some((x, y)) =
-                        overlapping_portal_target_coords(&state.portals, state.x, state.y)
+                    let (sx, sy) = (state.x, state.y);
+                    if let Some(portal_target) =
+                        get_portals_mut_parts(&mut state.screens, state.screen_index)
+                            .and_then(|portals| overlapping_portal_target(&portals, sx, sy))
                     {
-                        state.x = x;
-                        state.y = y;
+                        if let Some(portal) =
+                            get_portals_mut_parts(&mut state.screens, portal_target.screen_index)
+                                .and_then(|portals| portals.get(portal_target.target))
+                        {
+                            state.x = portal.x;
+                            state.y = portal.y;
+                            state.screen_index = portal_target.screen_index;
 
-                        state.portal_smell += PORTAL_SMELL_NS_PER;
+                            state.portal_smell += PORTAL_SMELL_NS_PER;
+                        }
                     }
                 }
 
-                if let Some(i) = overlapping_goal_index(&state.goals, state.x, state.y) {
-                    state.goals.swap_remove(i);
+                if let Some(screen) = state.screens.get_mut(state.screen_index) {
+                    if let Some(i) = overlapping_goal_index(&screen.goals, state.x, state.y) {
+                        screen.goals.swap_remove(i);
 
-                    state
-                        .goals
-                        .push(new_goal(&mut state.rng, &state.goal_nodes));
+                        screen
+                            .goals
+                            .push(new_goal(&mut state.rng, &screen.goal_nodes));
+                    }
                 }
 
                 state.portal_smell = state.portal_smell.saturating_sub(NS_PER_UPDATE as _);
@@ -411,31 +483,37 @@ pub fn update_and_render(
         );
     };
 
-    for portal in state.portals.iter() {
-        draw_portal(portal.x, portal.y);
+    if let Some(portals) = get_portals_mut(state) {
+        for portal in portals.iter() {
+            draw_portal(portal.x, portal.y);
+        }
     }
 
-    for goal_node in state.goal_nodes.iter() {
-        (p.draw_poly_with_matrix_and_colours)(
-            mat4x4_mul(
-                &view,
-                &scale_translation(1.0 / 8.0, goal_node.x, goal_node.y),
-            ),
-            (0.0, 0.0, 0.0, 0.0),
-            (192.0 / 255.0, 48.0 / 255.0, 48.0 / 255.0, 0.375),
-            3,
-            0,
-        );
+    if let Some(goal_nodes) = get_goal_nodes(state) {
+        for goal_node in goal_nodes.iter() {
+            (p.draw_poly_with_matrix_and_colours)(
+                mat4x4_mul(
+                    &view,
+                    &scale_translation(1.0 / 8.0, goal_node.x, goal_node.y),
+                ),
+                (0.0, 0.0, 0.0, 0.0),
+                (192.0 / 255.0, 48.0 / 255.0, 48.0 / 255.0, 0.375),
+                3,
+                0,
+            );
+        }
     }
 
-    for goal in state.goals.iter() {
-        (p.draw_poly_with_matrix_and_colours)(
-            mat4x4_mul(&view, &scale_translation(1.0 / 16.0, goal.x, goal.y)),
-            (83.0 / 255.0, 36.0 / 255.0, 36.0 / 255.0, 1.0),
-            (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
-            3,
-            0,
-        );
+    if let Some(goals) = get_goals(state) {
+        for goal in goals.iter() {
+            (p.draw_poly_with_matrix_and_colours)(
+                mat4x4_mul(&view, &scale_translation(1.0 / 16.0, goal.x, goal.y)),
+                (83.0 / 255.0, 36.0 / 255.0, 36.0 / 255.0, 1.0),
+                (192.0 / 255.0, 192.0 / 255.0, 48.0 / 255.0, 1.0),
+                3,
+                0,
+            );
+        }
     }
 
     let mut smell_fraction = state.portal_smell as f32 / PORTAL_SMELL_NS_PER as f32;
@@ -466,7 +544,7 @@ pub fn update_and_render(
     );
 
     match state.phase {
-        PlaceFirstPortal | PlaceSecondPortal => {
+        PlaceFirstPortal(_, _) | PlaceSecondPortal(_, _, _) => {
             draw_portal(mouse_x, mouse_y);
         }
         _ => {}
@@ -475,6 +553,85 @@ pub fn update_and_render(
 
 
     false
+}
+
+fn get_portals_mut(state: &mut State) -> Option<&mut Vec<Portal>> {
+    get_portals_mut_parts(&mut state.screens, state.screen_index)
+}
+
+fn get_portals_mut_parts(
+    screens: &mut Vec<Screen>,
+    screen_index: ScreenIndex,
+) -> Option<&mut Vec<Portal>> {
+    screens
+        .get_mut(screen_index)
+        .map(|screen| &mut screen.portals)
+}
+
+fn get_portals_mut_parts_pair(
+    screens: &mut Vec<Screen>,
+    screen_index_1: ScreenIndex,
+    screen_index_2: ScreenIndex,
+) -> Pair<&mut Vec<Portal>> {
+    index_twice(screens, screen_index_1, screen_index_2).map_into(|screen| &mut screen.portals)
+}
+
+fn get_goals(state: &mut State) -> Option<&Vec<Goal>> {
+    get_goals_parts(&mut state.screens, state.screen_index)
+}
+
+fn get_goals_parts(screens: &mut Vec<Screen>, screen_index: ScreenIndex) -> Option<&Vec<Goal>> {
+    screens.get_mut(screen_index).map(|screen| &screen.goals)
+}
+
+fn get_goal_nodes(state: &mut State) -> Option<&Vec<GoalNode>> {
+    get_goal_nodes_parts(&mut state.screens, state.screen_index)
+}
+
+fn get_goal_nodes_parts(
+    screens: &mut Vec<Screen>,
+    screen_index: ScreenIndex,
+) -> Option<&Vec<GoalNode>> {
+    screens
+        .get_mut(screen_index)
+        .map(|screen| &screen.goal_nodes)
+}
+
+// from https://stackoverflow.com/a/30075629/4496839
+enum Pair<T> {
+    Both(T, T),
+    One(T),
+    None,
+}
+
+fn index_twice<T>(slc: &mut [T], a: usize, b: usize) -> Pair<&mut T> {
+    if a == b {
+        slc.get_mut(a).map_or(Pair::None, Pair::One)
+    } else {
+        if a >= slc.len() || b >= slc.len() {
+            Pair::None
+        } else {
+            // safe because a, b are in bounds and distinct
+            unsafe {
+                let ar = &mut *(slc.get_unchecked_mut(a) as *mut _);
+                let br = &mut *(slc.get_unchecked_mut(b) as *mut _);
+                Pair::Both(ar, br)
+            }
+        }
+    }
+}
+
+impl<T> Pair<T> {
+    fn map_into<U, F>(self, f: F) -> Pair<U>
+    where
+        F: Fn(T) -> U,
+    {
+        match self {
+            Pair::Both(t1, t2) => Pair::Both(f(t1), f(t2)),
+            Pair::One(t) => Pair::One(f(t)),
+            Pair::None => Pair::None,
+        }
+    }
 }
 
 fn overlapping_goal_index(goals: &Vec<Goal>, x: f32, y: f32) -> Option<usize> {
@@ -500,7 +657,7 @@ fn overlapping_goal_index(goals: &Vec<Goal>, x: f32, y: f32) -> Option<usize> {
     result
 }
 
-fn overlapping_portal_target_coords(portals: &Vec<Portal>, x: f32, y: f32) -> Option<(f32, f32)> {
+fn overlapping_portal_target(portals: &Vec<Portal>, x: f32, y: f32) -> Option<PortalTarget> {
     //curently I'm not expecting more than  16-ish portals on a screen,
     //and eventually I expect screens to be separated out so O(N) will
     //probably be fine.
@@ -515,9 +672,7 @@ fn overlapping_portal_target_coords(portals: &Vec<Portal>, x: f32, y: f32) -> Op
         let distance_sq = get_euclidean_sq((x, y), (portal.x, portal.y));
 
         if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {
-            if let Some(target_portal) = portals.get(portal.target) {
-                result = Some((target_portal.x, target_portal.y));
-            }
+            result = Some(portal.target.clone());
 
             smallest_so_far = distance_sq;
         }

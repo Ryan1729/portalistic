@@ -31,27 +31,57 @@ pub struct State {
     pub ui_context: UIContext,
     pub x: f32,
     pub y: f32,
-    pub portals: Vec<Portal>,
+    pub screens: Vec<Screen>,
     pub portal_smell: u64,
-    pub goals: Vec<Goal>,
     pub phase: Phase,
-    pub goal_nodes: Vec<GoalNode>,
+    pub screen_index: ScreenIndex,
 }
 
 #[derive(Debug)]
 pub enum Phase {
     Move,
-    PlaceFirstPortal,
-    PlaceSecondPortal,
+    PlaceFirstPortal((ScreenIndex, ScreenIndex), ScreenIndex),
+    PlaceSecondPortal(ScreenIndex, PortalSpec, ScreenIndex),
 }
 
+#[derive(Debug)]
 pub struct Portal {
     pub x: f32,
     pub y: f32,
     pub target: PortalTarget,
 }
 
-pub type PortalTarget = usize;
+impl Portal {
+    pub fn from_spec(spec: PortalSpec, target: PortalTarget) -> Self {
+        Portal {
+            x: spec.x,
+            y: spec.y,
+            target,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PortalSpec {
+    pub x: f32,
+    pub y: f32,
+    pub screen_index: ScreenIndex,
+}
+
+#[derive(Debug, Clone)]
+pub struct PortalTarget {
+    pub screen_index: ScreenIndex,
+    pub target: usize,
+}
+
+pub type ScreenIndex = usize;
+
+#[derive(Default, Debug)]
+pub struct Screen {
+    pub portals: Vec<Portal>,
+    pub goals: Vec<Goal>,
+    pub goal_nodes: Vec<GoalNode>,
+}
 
 #[derive(Debug)]
 pub struct Goal {
