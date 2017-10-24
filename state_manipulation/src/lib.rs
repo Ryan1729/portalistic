@@ -115,8 +115,8 @@ fn add_portal_pair(screens: &mut Vec<Screen>, first: PortalSpec, second: PortalS
         Pair::Both(first_portals, second_portals) => {
             //A `PortalSpec`'s `screen_index` indicates which screen to insert the portal into.
             //A `PortalTarget`'s `screen_index` field stores which screen it leads to.
-            //The `target` field is the index in the other `portals` Vec where the other portal
-            //will be placed.
+            //The `target` field is the index in the other `plain_portals` Vec where the other
+            // portal will be placed.
             let first_target = PortalTarget {
                 screen_index: second.screen_index,
                 target: second_portals.len(),
@@ -126,11 +126,11 @@ fn add_portal_pair(screens: &mut Vec<Screen>, first: PortalSpec, second: PortalS
                 target: first_portals.len(),
             };
 
-            first_portals.push(Portal::from_spec(first, first_target));
-            second_portals.push(Portal::from_spec(second, second_target));
+            first_portals.push(PlainPortal::from_spec(first, first_target));
+            second_portals.push(PlainPortal::from_spec(second, second_target));
         }
-        Pair::One(portals) => {
-            let len = portals.len();
+        Pair::One(plain_portals) => {
+            let len = plain_portals.len();
 
             let first_target = PortalTarget {
                 screen_index: second.screen_index,
@@ -141,8 +141,8 @@ fn add_portal_pair(screens: &mut Vec<Screen>, first: PortalSpec, second: PortalS
                 target: len,
             };
 
-            portals.push(Portal::from_spec(first, first_target));
-            portals.push(Portal::from_spec(second, second_target));
+            plain_portals.push(PlainPortal::from_spec(first, first_target));
+            plain_portals.push(PlainPortal::from_spec(second, second_target));
         }
         Pair::None => {}
     }
@@ -175,7 +175,7 @@ pub fn update_and_render(
                 return true;
             }
             Event::KeyDown(Keycode::P) => {
-                //TODO allow selecting which screens portals will be placed on
+                //TODO allow selecting which screens plain_portals will be placed on
                 state.phase = PlaceFirstPortal((0, 1), state.screen_index);
             }
             Event::KeyDown(Keycode::G) => {
@@ -435,12 +435,12 @@ pub fn update_and_render(
                 if state.portal_smell == 0 {
                     let (sx, sy) = (state.x, state.y);
                     if let Some(portal_target) =
-                        get_portals_mut_parts(&mut state.screens, state.screen_index)
-                            .and_then(|portals| overlapping_portal_target(&portals, sx, sy))
-                    {
+                        get_portals_mut_parts(&mut state.screens, state.screen_index).and_then(
+                            |plain_portals| overlapping_portal_target(&plain_portals, sx, sy),
+                        ) {
                         if let Some(portal) =
                             get_portals_mut_parts(&mut state.screens, portal_target.screen_index)
-                                .and_then(|portals| portals.get(portal_target.target))
+                                .and_then(|plain_portals| plain_portals.get(portal_target.target))
                         {
                             state.x = portal.x;
                             state.y = portal.y;
@@ -497,8 +497,8 @@ pub fn update_and_render(
         );
     };
 
-    if let Some(portals) = get_portals_mut(state) {
-        for portal in portals.iter() {
+    if let Some(plain_portals) = get_portals_mut(state) {
+        for portal in plain_portals.iter() {
             draw_portal(portal.x, portal.y);
         }
     }
@@ -569,25 +569,26 @@ pub fn update_and_render(
     false
 }
 
-fn get_portals_mut(state: &mut State) -> Option<&mut Vec<Portal>> {
+fn get_portals_mut(state: &mut State) -> Option<&mut Vec<PlainPortal>> {
     get_portals_mut_parts(&mut state.screens, state.screen_index)
 }
 
 fn get_portals_mut_parts(
     screens: &mut Vec<Screen>,
     screen_index: ScreenIndex,
-) -> Option<&mut Vec<Portal>> {
+) -> Option<&mut Vec<PlainPortal>> {
     screens
         .get_mut(screen_index)
-        .map(|screen| &mut screen.portals)
+        .map(|screen| &mut screen.plain_portals)
 }
 
 fn get_portals_mut_parts_pair(
     screens: &mut Vec<Screen>,
     screen_index_1: ScreenIndex,
     screen_index_2: ScreenIndex,
-) -> Pair<&mut Vec<Portal>> {
-    index_twice(screens, screen_index_1, screen_index_2).map_into(|screen| &mut screen.portals)
+) -> Pair<&mut Vec<PlainPortal>> {
+    index_twice(screens, screen_index_1, screen_index_2)
+        .map_into(|screen| &mut screen.plain_portals)
 }
 
 fn get_goals(state: &mut State) -> Option<&Vec<Goal>> {
@@ -671,8 +672,12 @@ fn overlapping_goal_index(goals: &Vec<Goal>, x: f32, y: f32) -> Option<usize> {
     result
 }
 
-fn overlapping_portal_target(portals: &Vec<Portal>, x: f32, y: f32) -> Option<PortalTarget> {
-    //curently I'm not expecting more than  16-ish portals on a screen,
+fn overlapping_portal_target(
+    plain_portals: &Vec<PlainPortal>,
+    x: f32,
+    y: f32,
+) -> Option<PortalTarget> {
+    //curently I'm not expecting more than  16-ish plain_portals on a screen,
     //and eventually I expect screens to be separated out so O(N) will
     //probably be fine.
 
@@ -682,7 +687,7 @@ fn overlapping_portal_target(portals: &Vec<Portal>, x: f32, y: f32) -> Option<Po
 
     let mut smallest_so_far = std::f32::INFINITY;
 
-    for portal in portals.iter() {
+    for portal in plain_portals.iter() {
         let distance_sq = get_euclidean_sq((x, y), (portal.x, portal.y));
 
         if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {

@@ -45,15 +45,15 @@ pub enum Phase {
 }
 
 #[derive(Debug)]
-pub struct Portal {
+pub struct PlainPortal {
     pub x: f32,
     pub y: f32,
     pub target: PortalTarget,
 }
 
-impl Portal {
+impl PlainPortal {
     pub fn from_spec(spec: PortalSpec, target: PortalTarget) -> Self {
-        Portal {
+        PlainPortal {
             x: spec.x,
             y: spec.y,
             target,
@@ -78,7 +78,7 @@ pub type ScreenIndex = usize;
 
 #[derive(Default, Debug)]
 pub struct Screen {
-    pub portals: Vec<Portal>,
+    pub plain_portals: Vec<PlainPortal>,
     pub goals: Vec<Goal>,
     pub goal_nodes: Vec<GoalNode>,
 }
