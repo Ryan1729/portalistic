@@ -41,7 +41,10 @@ fn make_state(mut rng: StdRng) -> State {
             goal_nodes,
             ..Default::default()
         },
-        Default::default(),
+        Screen {
+            goal_nodes: vec![rng.gen()],
+            ..Default::default()
+        },
     ];
 
     add_random_portal_pair(&mut rng, &mut screens, 0, 1);
@@ -448,10 +451,21 @@ pub fn update_and_render(
                     }
                 }
 
+                let mut need_new_goal = false;
                 if let Some(screen) = state.screens.get_mut(state.screen_index) {
                     if let Some(i) = overlapping_goal_index(&screen.goals, state.x, state.y) {
                         screen.goals.swap_remove(i);
 
+
+                        need_new_goal = true;
+                    }
+                }
+
+                let screen_count = state.screens.len();
+                if need_new_goal && screen_count > 0 {
+                    if let Some(screen) =
+                        state.screens.get_mut(state.rng.gen_range(0, screen_count))
+                    {
                         screen
                             .goals
                             .push(new_goal(&mut state.rng, &screen.goal_nodes));
