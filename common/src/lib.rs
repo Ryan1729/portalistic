@@ -42,6 +42,7 @@ pub enum Phase {
     Move,
     PlaceFirstPortal((ScreenIndex, ScreenIndex), ScreenIndex),
     PlaceSecondPortal(ScreenIndex, PortalSpec, ScreenIndex),
+    PlaceFunctionPortal(ScreenIndex, PortalFunction),
 }
 
 #[derive(Debug)]
@@ -74,11 +75,35 @@ pub struct PortalTarget {
     pub target: usize,
 }
 
+#[derive(Debug)]
+pub struct FunctionPortal {
+    pub x: f32,
+    pub y: f32,
+    pub target_screen_index: ScreenIndex,
+    pub function: PortalFunction,
+}
+
+pub struct PortalFunction(pub Box<Fn(f32, f32) -> (f32, f32)>);
+
+impl PortalFunction {
+    pub fn new(f: Box<Fn(f32, f32) -> (f32, f32)>) -> Self {
+        PortalFunction(f)
+    }
+}
+
+use std::fmt;
+impl fmt::Debug for PortalFunction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PortalFunction(closure)")
+    }
+}
+
 pub type ScreenIndex = usize;
 
 #[derive(Default, Debug)]
 pub struct Screen {
     pub plain_portals: Vec<PlainPortal>,
+    pub function_portals: Vec<FunctionPortal>,
     pub goals: Vec<Goal>,
     pub goal_nodes: Vec<GoalNode>,
 }

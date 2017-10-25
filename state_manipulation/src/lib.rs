@@ -45,6 +45,10 @@ fn make_state(mut rng: StdRng) -> State {
             goal_nodes: vec![rng.gen()],
             ..Default::default()
         },
+        Screen {
+            goal_nodes: vec![rng.gen()],
+            ..Default::default()
+        },
     ];
 
     add_random_portal_pair(&mut rng, &mut screens, 0, 1);
@@ -177,6 +181,24 @@ pub fn update_and_render(
             Event::KeyDown(Keycode::P) => {
                 //TODO allow selecting which screens plain_portals will be placed on
                 state.phase = PlaceFirstPortal((0, 1), state.screen_index);
+            }
+            Event::KeyDown(Keycode::Num8) => {
+                //TODO allow selecting which screens function portals will be placed on
+                match state.screen_index {
+                    1 => {
+                        state.phase = PlaceFunctionPortal(
+                            2,
+                            PortalFunction::new(Box::new(|x, y| (x / 8.0, y / 8.0))),
+                        );
+                    }
+                    2 => {
+                        state.phase = PlaceFunctionPortal(
+                            1,
+                            PortalFunction::new(Box::new(|x, y| (x * 8.0, y * 8.0))),
+                        );
+                    }
+                    _ => {}
+                }
             }
             Event::KeyDown(Keycode::G) => {
                 fn new_goal_node(rng: &mut StdRng, goal_nodes: &Vec<GoalNode>) -> GoalNode {
@@ -405,6 +427,26 @@ pub fn update_and_render(
                 state.screen_index = previous_screen_index;
             }
         }
+        PlaceFunctionPortal(_, _) => {
+            if background_button_outcome.clicked {
+                //this oddness is defaling with trhe fact we have a PortalFunction in this case
+                match std::mem::replace(&mut state.phase, Move) {
+                    PlaceFunctionPortal(target_screen_index, function) => {
+                        if let Some(portals) = get_function_portals_mut(state) {
+                            portals.push(FunctionPortal {
+                                x: mouse_x,
+                                y: mouse_y,
+                                function,
+                                target_screen_index,
+                            })
+                        }
+                    }
+                    _ => {
+                        panic!("But it was a PlaceFunctionPortal a few cycles ago!");
+                    }
+                }
+            }
+        }
         _ => {}
     }
 
@@ -432,7 +474,9 @@ pub fn update_and_render(
                     state.y += angle.sin() * player_speed;
                 }
 
+
                 if state.portal_smell == 0 {
+                    let current_screen_index = state.screen_index;
                     let (sx, sy) = (state.x, state.y);
                     if let Some(portal_target) =
                         get_portals_mut_parts(&mut state.screens, state.screen_index).and_then(
@@ -445,6 +489,76 @@ pub fn update_and_render(
                             state.x = portal.x;
                             state.y = portal.y;
                             state.screen_index = portal_target.screen_index;
+
+                            state.portal_smell += PORTAL_SMELL_NS_PER;
+                        }
+                    } else if let Some(((x, y), target_screen_index)) =
+                        get_function_portals_mut_parts(&mut state.screens, current_screen_index)
+                            .and_then(|function_portals| {
+                                overlapping_function_portal(&function_portals, sx, sy).map(
+                                    |portal| {
+                                        let (unclamped_x, unclamped_y) =
+                                            (portal.function.0)(portal.x, portal.y);
+
+                                        (
+                                            (
+                                                clamp_point_875(unclamped_x),
+                                                clamp_point_875(unclamped_y),
+                                            ),
+                                            portal.target_screen_index,
+                                        )
+                                    },
+                                )
+                            }) {
+                        if let Some(portals) =
+                            get_function_portals_mut_parts(&mut state.screens, target_screen_index)
+                        {
+                            fn close_enough_xy(
+                                x: f32,
+                                y: f32,
+                                function_portals: &mut Vec<FunctionPortal>,
+                            ) -> Option<(f32, f32)> {
+                                let mut result = None;
+
+                                const SEARCH_DISTANCE_SQ: f32 = 0.05;
+
+                                let mut smallest_so_far = std::f32::INFINITY;
+
+                                for portal in function_portals.iter() {
+                                    let distance_sq =
+                                        get_euclidean_sq((x, y), (portal.x, portal.y));
+
+                                    if distance_sq < SEARCH_DISTANCE_SQ
+                                        && SEARCH_DISTANCE_SQ < smallest_so_far
+                                    {
+                                        result = Some((portal.x, portal.y));
+
+                                        smallest_so_far = distance_sq;
+                                    }
+                                }
+
+                                result
+                            }
+
+                            let (target_x, target_y) = close_enough_xy(x, y, portals)
+                                .unwrap_or_else(|| {
+                                    let new_portal = FunctionPortal {
+                                        x,
+                                        y,
+                                        target_screen_index: current_screen_index,
+                                        //TODO store function and its inverse on each portal?
+                                        //Or just give up and use function pointers?
+                                        function: PortalFunction::new(
+                                            Box::new(|x, y| (x * 8.0, y * 8.0)),
+                                        ),
+                                    };
+
+                                    portals.push(new_portal);
+                                    (x, y)
+                                });
+                            state.x = target_x;
+                            state.y = target_y;
+                            state.screen_index = target_screen_index;
 
                             state.portal_smell += PORTAL_SMELL_NS_PER;
                         }
@@ -500,6 +614,16 @@ pub fn update_and_render(
     if let Some(plain_portals) = get_portals_mut(state) {
         for portal in plain_portals.iter() {
             draw_portal(portal.x, portal.y);
+        }
+    }
+
+    if let Some(function_portals) = get_function_portals_mut(state) {
+        for portal in function_portals.iter() {
+            (p.draw_poly_with_matrix)(
+                mat4x4_mul(&view, &scale_translation(1.0 / 16.0, portal.x, portal.y)),
+                5,
+                0,
+            );
         }
     }
 
@@ -580,6 +704,19 @@ fn get_portals_mut_parts(
     screens
         .get_mut(screen_index)
         .map(|screen| &mut screen.plain_portals)
+}
+
+fn get_function_portals_mut(state: &mut State) -> Option<&mut Vec<FunctionPortal>> {
+    get_function_portals_mut_parts(&mut state.screens, state.screen_index)
+}
+
+fn get_function_portals_mut_parts(
+    screens: &mut Vec<Screen>,
+    screen_index: ScreenIndex,
+) -> Option<&mut Vec<FunctionPortal>> {
+    screens
+        .get_mut(screen_index)
+        .map(|screen| &mut screen.function_portals)
 }
 
 fn get_portals_mut_parts_pair(
@@ -692,6 +829,34 @@ fn overlapping_portal_target(
 
         if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {
             result = Some(portal.target.clone());
+
+            smallest_so_far = distance_sq;
+        }
+    }
+
+    result
+}
+
+fn overlapping_function_portal(
+    function_portals: &Vec<FunctionPortal>,
+    x: f32,
+    y: f32,
+) -> Option<&FunctionPortal> {
+    //curently I'm not expecting more than  16-ish function_portals on a screen,
+    //and eventually I expect screens to be separated out so O(N) will
+    //probably be fine.
+
+    let mut result = None;
+
+    const MINIMUM_DISTANCE_SQ: f32 = 0.0005;
+
+    let mut smallest_so_far = std::f32::INFINITY;
+
+    for portal in function_portals.iter() {
+        let distance_sq = get_euclidean_sq((x, y), (portal.x, portal.y));
+
+        if distance_sq < MINIMUM_DISTANCE_SQ && MINIMUM_DISTANCE_SQ < smallest_so_far {
+            result = Some(portal);
 
             smallest_so_far = distance_sq;
         }
@@ -832,6 +997,20 @@ fn button_logic(context: &mut UIContext, button: Button) -> ButtonOutcome {
     ButtonOutcome {
         clicked,
         draw_state,
+    }
+}
+
+fn clamp_point_875(current: f32) -> f32 {
+    clamp(current, -0.875, 0.875)
+}
+
+fn clamp(current: f32, min: f32, max: f32) -> f32 {
+    if current > max {
+        max
+    } else if current < min {
+        min
+    } else {
+        current
     }
 }
 
